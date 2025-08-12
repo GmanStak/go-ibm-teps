@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Topology</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>svg{border:1px solid #ccc}</style>
+</head>
+<body>
+<h2>Agent ↔ GEMS 拓扑</h2>
+<svg width="800" height="600"></svg>
+<script>
+    const svg = d3.select("svg");
+    function update() {
+        fetch("/api").then(r=>r.json()).then(data=>{
+            svg.selectAll("*").remove();
+            const nodes=[], links=[];
+            for (const [tems,agents] of Object.entries(data)) {
+                nodes.push({id:tems,group:1});
+                agents.forEach(a=>{
+                    nodes.push({id:a.hostname,group:2});
+                    links.push({source:tems,target:a.hostname});
+                });
+            }
+            const simulation = d3.forceSimulation(nodes)
+                .force("link", d3.forceLink(links).id(d=>d.id))
+                .force("charge", d3.forceManyBody().strength(-300))
+                .force("center", d3.forceCenter(400,300));
+
+            const link = svg.append("g")
+                .selectAll("line")
+                .data(links).enter().append("line")
+                .attr("stroke","#999");
+
+            const node = svg.append("g")
+                .selectAll("circle")
+                .data(nodes).enter().append("circle")
+                .attr("r", 10)
+                .attr("fill", d=>d.group===1?"#ff7f0e":"#1f77b4");
+
+            const label = svg.append("g")
+                .selectAll("text")
+                .data(nodes).enter().append("text")
+                .text(d=>d.id)
+                .attr("font-size",12).attr("dx",12).attr("dy",4);
+
+            simulation.on("tick",()=>{
+                link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y)
+                    .attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+                node.attr("cx",d=>d.x).attr("cy",d=>d.y);
+                label.attr("x",d=>d.x).attr("y",d=>d.y);
+            });
+        });
+    }
+    update();
+    setInterval(update, 10000);
+</script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>GEPS Dashboard</title>
+    <style>
+        body{font-family:Arial;margin:20px}
+        table{border-collapse:collapse;width:100%}
+        th,td{border:1px solid #ddd;padding:8px}
+        th{background:#f2f2f2}
+    </style>
+</head>
+<body>
+<h2>GEPS Mock</h2>
+<p><b>GEMS 数量：</b><span id="temsCnt">-</span></p>
+<p><b>Agent 数量：</b><span id="agentCnt">-</span></p>
+
+<h3>Agent ↔ GEMS 连接关系</h3>
+<table>
+    <thead>
+    <tr><th>GEMS</th><th>Agent</th><th>IP</th><th>状态</th><th>最后心跳</th></tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+</table>
+
+<script>
+    async function load() {
+        const data = await fetch('/api').then(r=>r.json());
+        const tbody = document.getElementById('tbody');
+        tbody.innerHTML = '';
+        let agentCnt = 0;
+        for (const [tems, agents] of Object.entries(data)) {
+            agentCnt += agents.length;
+            agents.forEach(a=>{
+                const tr = tbody.insertRow();
+                tr.insertCell(0).textContent = tems;
+                tr.insertCell(1).textContent = a.hostname;
+                tr.insertCell(2).textContent = a.ip;
+                tr.insertCell(3).textContent = a.status;
+                tr.insertCell(4).textContent = new Date(a.last_seen*1000).toLocaleTimeString();
+            });
+        }
+        document.getElementById('temsCnt').textContent = Object.keys(data).length;
+        document.getElementById('agentCnt').textContent = agentCnt;
+    }
+    load();
+    setInterval(load, 5000);
+</script>
+</body>
+</html>
