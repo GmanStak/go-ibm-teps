@@ -5,12 +5,34 @@ package main
 
 import (
 	"encoding/json"
+	"gopkg.in/yaml.v3"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/gorilla/mux"
 )
+
+type Config struct {
+	ListenAddr string `yaml:"listen_addr"`
+	Basic      struct {
+		User string `yaml:"user"`
+		Pass string `yaml:"pass"`
+	} `yaml:"basic"`
+}
+
+var cfg Config
+
+func loadConfig(path string) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		log.Fatalf("read config: %v", err)
+	}
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		log.Fatalf("parse yaml: %v", err)
+	}
+}
 
 // -------------- 数据模型 --------------
 type Agent struct {
@@ -36,6 +58,24 @@ func init() {
 	store.TEMS = make(map[string][]Agent)
 }
 
+func basicAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := cfg.Basic.User
+		pass := cfg.Basic.Pass
+		if user == "" && pass == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		u, p, ok := r.BasicAuth()
+		if !ok || u != user || p != pass {
+			w.Header().Set("WWW-Authenticate", `Basic realm="GEPS"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // -------------- 接收端点 --------------
 func reportHandler(w http.ResponseWriter, r *http.Request) {
 	var rep TEMSReport
@@ -58,12 +98,22 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 
 // -------------- 主函数 --------------
 func main() {
-	r := mux.NewRouter()
-	r.HandleFunc("/teps/report", reportHandler).Methods("POST")
-	r.HandleFunc("/api", apiHandler)
-	// 静态文件（index.html / topo.html）
-	r.PathPrefix("/").Handler(http.StripPrefix("/", http.FileServer(http.Dir("./web"))))
+	loadConfig("config.yaml") // 读取 config.yaml
 
-	log.Println("GEPS mock listening http://localhost:8081")
-	log.Fatal(http.ListenAndServe(":8081", r))
+	r := mux.NewRouter()
+	// 1. 公开端点：TEMS 推送
+	r.HandleFunc("/teps/report", reportHandler).Methods("POST")
+
+	// 2. 受保护端点
+	protected := r.PathPrefix("/").Subrouter()
+	protected.HandleFunc("/api", apiHandler)
+	protected.PathPrefix("/").Handler(http.StripPrefix("/", http.FileServer(http.Dir("./web"))))
+	protected.Use(basicAuth)
+
+	addr := cfg.ListenAddr
+	if addr == "" {
+		addr = ":8081"
+	}
+	log.Printf("GEPS mock listening http://localhost%s  (basic auth enabled)", addr)
+	log.Fatal(http.ListenAndServe(addr, r))
 }
